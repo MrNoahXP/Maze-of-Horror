@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Endless Maze</title>
+<style>
+  :root{
+    --blood:#7a1f1f;
+    --ember:#c96a3a;
+    --bone:#d8cfc0;
+    --void:#07070a;
+    --panel:rgba(10,9,12,0.78);
+    --sick-green:#4c6b4a;
+  }
+  html,body{margin:0;padding:0;background:#000;overflow:hidden;height:100%;
+    font-family:'Courier New',monospace;}
+  #gameCanvas{display:block;width:100vw;height:100vh;}
+
+  #hud{position:fixed;inset:0;pointer-events:none;color:var(--bone);
+    text-shadow:0 0 6px rgba(0,0,0,0.9);}
+
+  .bar-wrap{position:absolute;width:220px;height:16px;background:rgba(0,0,0,0.55);
+    border:1px solid rgba(216,207,192,0.35);}
+  .bar-fill{height:100%;transition:width .15s linear;}
+  #healthWrap{left:24px;bottom:78px;}
+  #healthFill{background:linear-gradient(90deg,#5a0e0e,var(--blood));width:100%;}
+  #staminaWrap{left:24px;bottom:56px;}
+  #staminaFill{background:linear-gradient(90deg,#2c4a2c,var(--sick-green));width:100%;}
+  #batteryWrap{left:24px;bottom:34px;}
+  #batteryFill{background:linear-gradient(90deg,#5a4a12,var(--ember));width:100%;}
+  .bar-label{position:absolute;left:226px;top:-2px;font-size:11px;letter-spacing:2px;
+    color:var(--bone);opacity:.75;}
+
+  #phaseTag{position:absolute;top:20px;left:24px;font-size:13px;letter-spacing:4px;
+    text-transform:uppercase;color:var(--ember);opacity:.85;}
+  #objective{position:absolute;top:44px;left:24px;font-size:12px;letter-spacing:1px;
+    color:var(--bone);opacity:.6;max-width:340px;}
+
+  #crosshair{position:absolute;top:50%;left:50%;width:6px;height:6px;
+    transform:translate(-50%,-50%);border-radius:50%;background:rgba(216,207,192,0.7);}
+
+  #lockHint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    font-size:13px;letter-spacing:2px;color:var(--bone);opacity:0;background:rgba(0,0,0,0.6);
+    padding:10px 18px;transition:opacity .3s;pointer-events:all;cursor:pointer;
+    border:1px solid rgba(216,207,192,0.3);}
+
+  #bossWrap{position:absolute;top:20px;left:50%;transform:translateX(-50%);
+    width:420px;height:14px;background:rgba(0,0,0,0.55);border:1px solid var(--blood);
+    display:none;}
+  #bossFill{height:100%;background:linear-gradient(90deg,#3a0808,var(--blood));width:100%;
+    transition:width .2s linear;}
+  #bossName{position:absolute;top:0;left:50%;transform:translateX(-50%) translateY(-20px);
+    font-size:12px;letter-spacing:3px;color:var(--blood);text-transform:uppercase;}
+
+  #whisperText{position:absolute;bottom:120px;left:50%;transform:translateX(-50%);
+    font-size:13px;color:var(--sick-green);opacity:0;transition:opacity .8s;
+    letter-spacing:1px;font-style:italic;}
+
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;
+    transition:opacity .08s;z-index:50;}
+
+  #saveIcon{position:absolute;top:20px;right:24px;font-size:11px;letter-spacing:2px;
+    color:var(--ember);opacity:0;transition:opacity .4s;}
+
+  #vignette{position:fixed;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 220px 90px rgba(0,0,0,0.85);z-index:5;}
+
+  #startScreen,#endScreen{position:fixed;inset:0;background:var(--void);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    color:var(--bone);z-index:100;text-align:center;padding:20px;}
+  #startScreen h1,#endScreen h1{font-size:clamp(28px,5vw,52px);letter-spacing:6px;
+    color:var(--blood);text-transform:uppercase;margin-bottom:6px;
+    text-shadow:0 0 20px rgba(122,31,31,0.6);}
+  #startScreen p,#endScreen p{max-width:520px;font-size:13px;line-height:1.7;
+    opacity:.7;letter-spacing:.5px;}
+  .btn{margin-top:26px;padding:12px 30px;background:transparent;
+    border:1px solid var(--ember);color:var(--ember);font-family:inherit;
+    letter-spacing:3px;text-transform:uppercase;font-size:12px;cursor:pointer;
+    transition:.2s;pointer-events:all;}
+  .btn:hover{background:var(--ember);color:#000;}
+  #hidden{display:none;}
+
+  #dmgOverlay{position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(circle,transparent 40%,rgba(122,10,10,0.55) 100%);
+    opacity:0;transition:opacity .25s;z-index:20;}
+
+  #inventory{position:absolute;bottom:24px;right:24px;display:flex;gap:6px;}
+  .item-slot{width:38px;height:38px;border:1px solid rgba(216,207,192,0.3);
+    background:rgba(0,0,0,0.5);font-size:16px;display:flex;align-items:center;
+    justify-content:center;color:var(--bone);opacity:.6;}
+</style>
+</head>
+<body>
+
+<div id="startScreen">
+  <h1>The Endless Maze</h1>
+  <p>You wake in the dark. Ten phases stand between you and daylight. Each one hides
+  something that hunts. Move with <b>WASD</b>, look with the mouse, hold
+  <b>Shift</b> to sprint, press <b>F</b> for your flashlight, <b>Space</b> to dodge,
+  and <b>Left Click</b> to strike when it finds you.</p>
+  <p style="opacity:.4;font-size:11px;">Prototype build — Phases 1–3 fully playable.
+  Architecture supports Phases 4–10 (see source comments).</p>
+  <button class="btn" id="startBtn">Enter the Maze</button>
+  <button class="btn" id="loadBtn">Continue Saved Run</button>
+</div>
+
+<div id="endScreen" class="hidden" style="display:none;">
+  <h1>The End... Or Is It?</h1>
+  <p id="endText"></p>
+  <button class="btn" id="restartBtn">Return to the Dark</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="vignette"></div>
+<div id="dmgOverlay"></div>
+<div id="flash"></div>
+
+<div id="hud">
+  <div id="phaseTag">Phase 1 — The Shallow Halls</div>
+  <div id="objective">Objective: find the exit gate.</div>
+
+  <div id="bossName">Shadow Walker</div>
+  <div id="bossWrap"><div id="bossFill"></div></div>
+
+  <div id="whisperText"></div>
+
+  <div class="bar-wrap" id="healthWrap"><div class="bar-fill" id="healthFill"></div>
+    <div class="bar-label">HEALTH</div></div>
+  <div class="bar-wrap" id="staminaWrap"><div class="bar-fill" id="staminaFill"></div>
+    <div class="bar-label">STAMINA</div></div>
+  <div class="bar-wrap" id="batteryWrap"><div class="bar-fill" id="batteryFill"></div>
+    <div class="bar-label">BATTERY</div></div>
+
+  <div id="crosshair"></div>
+  <div id="lockHint">CLICK TO LOOK AROUND</div>
+  <div id="saveIcon">◆ SAVED</div>
+
+  <div id="inventory">
+    <div class="item-slot">🔦</div>
+    <div class="item-slot">🗡</div>
+    <div class="item-slot">✚</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =========================================================================
+   THE ENDLESS MAZE — prototype engine
+   -------------------------------------------------------------------------
+   Architecture overview (see design doc requirements):
+     - MazeGenerator   : procedural maze via recursive backtracker
+     - Maze            : builds 3D geometry + exposes collision segments
+     - InputManager    : keyboard / mouse / pointer-lock state
+     - Player          : movement, stamina, flashlight, health, dodge
+     - Monster (base)  : shared AI state machine (PATROL/CHASE/SEARCH/ATTACK)
+         -> ShadowWalker, Crawler, Whisper   (Phase 1-3 concrete monsters)
+     - PhaseManager    : holds PHASE_CONFIG table, handles progression
+     - Game            : top level orchestrator / render loop / UI sync
+
+   EXTENDING TO PHASES 4-10:
+     1. Add a new entry to PHASE_CONFIG (size, monster class, stat multipliers).
+     2. Subclass Monster with the phase's unique behavior (see the three
+        examples below for the pattern: override `updateAI(dt, player, maze)`).
+     3. Nothing else needs to change — PhaseManager and Game read from
+        PHASE_CONFIG generically. The Final Arena / Maze King boss-rush can
+        be built the same way: reuse each Monster subclass with buffed
+        stats, then layer a MazeKing class that swaps abilities by phase
+        (see the `FinalBossStub` class at the bottom for a starting point).
+   ========================================================================= */
+
+// ---------------------------------------------------------------- CONSTANTS
+const CELL_SIZE = 6;
+const WALL_HEIGHT = 4;
+const WALL_THICK = 0.3;
+const PLAYER_RADIUS = 0.35;
+const PLAYER_EYE_HEIGHT = 1.7;
+
+// ---------------------------------------------------------------- SAVE API
+const SaveSystem = {
+  key: 'endless-maze-save',
+  async save(state){
+    try{
+      await window.storage.set(this.key, JSON.stringify(state));
+      flashSavedIcon();
+      return true;
+    }catch(e){ console.error('save failed', e); return false; }
+  },
+  async load(){
+    try{
+      const res = await window.storage.get(this.key);
+      return res ? JSON.parse(res.value) : null;
+    }catch(e){ return null; }
+  }
+};
+function flashSavedIcon(){
+  const el = document.getElementById('saveIcon');
+  el.style.opacity = '1';
+  setTimeout(()=>el.style.opacity='0', 1600);
+}
+
+// ---------------------------------------------------------------- MAZE GEN
+// Classic recursive-backtracker producing a perfect maze on an NxN grid.
+class MazeGenerator{
+  constructor(size){
+    this.size = size;
+    // each cell: {n,s,e,w} = true means wall present
+    this.grid = [];
+    for(let x=0;x<size;x++){
+      const col=[];
+      for(let y=0;y<size;y++) col.push({n:true,s:true,e:true,w:true,visited:false});
+      this.grid.push(col);
+    }
+  }
+  neighbors(x,y){
+    const dirs = [
+      {dx:0,dy:-1,me:'n',them:'s'},
+      {dx:0,dy:1,me:'s',them:'n'},
+      {dx:1,dy:0,me:'e',them:'w'},
+      {dx:-1,dy:0,me:'w',them:'e'}
+    ];
+    const out=[];
+    for(const d of dirs){
+      const nx=x+d.dx, ny=y+d.dy;
+      if(nx>=0&&ny>=0&&nx<this.size&&ny<this.size&&!this.grid[nx][ny].visited){
+        out.push({x:nx,y:ny,me:d.me,them:d.them});
+      }
+    }
+    return out;
+  }
+  generate(){
+    const stack=[{x:0,y:0}];
+    this.grid[0][0].visited=true;
+    while(stack.length){
+      const cur = stack[stack.length-1];
+      const opts = this.neighbors(cur.x,cur.y);
+      if(opts.length===0){ stack.pop(); continue; }
+      const pick = opts[Math.floor(Math.random()*opts.length)];
+      this.grid[cur.x][cur.y][pick.me]=false;
+      this.grid[pick.x][pick.y][pick.them]=false;
+      this.grid[pick.x][pick.y].visited=true;
+      stack.push({x:pick.x,y:pick.y});
+    }
+    // carve a few extra loops for "hidden shortcuts"
+    const extraCuts = Math.floor(this.size*0.6);
+    for(let i=0;i<extraCuts;i++){
+      const x=Math.floor(Math.random()*this.size);
+      const y=Math.floor(Math.random()*this.size);
+      const dirs=['n','s','e','w'];
+      const d=dirs[Math.floor(Math.random()*4)];
+      this.grid[x][y][d]=false;
+    }
+  }
+}
+
+// Builds Three.js geometry + collision segments from a MazeGenerator grid
+class Maze{
+  constructor(scene, size, theme){
+    this.size=size;
+    this.theme=theme;
+    this.gen = new MazeGenerator(size);
+    this.gen.generate();
+    this.walls=[]; // collision line segments {x1,z1,x2,z2}
+    this.group = new THREE.Group();
+    scene.add(this.group);
+    this._build();
+  }
+  worldPos(cx,cy){
+    return { x:(cx-this.size/2)*CELL_SIZE, z:(cy-this.size/2)*CELL_SIZE };
+  }
+  _addWall(x1,z1,x2,z2, mat){
+    const len = Math.hypot(x2-x1,z2-z1);
+    const geo = new THREE.BoxGeometry(len, WALL_HEIGHT, WALL_THICK);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((x1+x2)/2, WALL_HEIGHT/2, (z1+z2)/2);
+    mesh.rotation.y = Math.atan2(z2-z1, x2-x1);
+    mesh.castShadow=true; mesh.receiveShadow=true;
+    this.group.add(mesh);
+    this.walls.push({x1,z1,x2,z2});
+  }
+  _build(){
+    const wallMat = new THREE.MeshStandardMaterial({
+      color:this.theme.wallColor, roughness:0.95, metalness:0.05
+    });
+    const floorMat = new THREE.MeshStandardMaterial({
+      color:this.theme.floorColor, roughness:1
+    });
+    const floorGeo = new THREE.PlaneGeometry(this.size*CELL_SIZE+4, this.size*CELL_SIZE+4);
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x=-Math.PI/2;
+    floor.receiveShadow=true;
+    this.group.add(floor);
+
+    const half=CELL_SIZE/2;
+    for(let x=0;x<this.size;x++){
+      for(let y=0;y<this.size;y++){
+        const c=this.gen.grid[x][y];
+        const p=this.worldPos(x,y);
+        if(c.n) this._addWall(p.x-half,p.z-half,p.x+half,p.z-half,wallMat);
+        if(c.w) this._addWall(p.x-half,p.z-half,p.x-half,p.z+half,wallMat);
+        // only draw south/east on last row/col to avoid doubled walls
+        if(y===this.size-1 && c.s) this._addWall(p.x-half,p.z+half,p.x+half,p.z+half,wallMat);
+        if(x===this.size-1 && c.e) this._addWall(p.x+half,p.z-half,p.x+half,p.z+half,wallMat);
+      }
+    }
+    // exit marker glow at far corner
+    const exitPos = this.worldPos(this.size-1,this.size-1);
+    const glow = new THREE.PointLight(this.theme.exitGlow, 2, 10);
+    glow.position.set(exitPos.x, 2, exitPos.z);
+    this.group.add(glow);
+    this.exitWorld = exitPos;
+    this.startWorld = this.worldPos(0,0);
+  }
+  // resolve a moving circle against all wall segments (simple slide collision)
+  resolveCollision(pos, radius){
+    for(const w of this.walls){
+      const dx=w.x2-w.x1, dz=w.z2-w.z1;
+      const len2 = dx*dx+dz*dz;
+      let t = len2>0 ? ((pos.x-w.x1)*dx+(pos.z-w.z1)*dz)/len2 : 0;
+      t = Math.max(0,Math.min(1,t));
+      const cx=w.x1+t*dx, cz=w.z1+t*dz;
+      const ddx=pos.x-cx, ddz=pos.z-cz;
+      const dist=Math.hypot(ddx,ddz);
+      const minDist = radius + WALL_THICK/2;
+      if(dist < minDist && dist>0.0001){
+        const push=(minDist-dist);
+        pos.x += (ddx/dist)*push;
+        pos.z += (ddz/dist)*push;
+      }
+    }
+    return pos;
+  }
+  cellOf(x,z){
+    const cx = Math.round(x/CELL_SIZE + this.size/2 - 0.5);
+    const cy = Math.round(z/CELL_SIZE + this.size/2 - 0.5);
+    return {cx:Math.max(0,Math.min(this.size-1,cx)), cy:Math.max(0,Math.min(this.size-1,cy))};
+  }
+  // BFS shortest path between two cells (used for monster chase/patrol)
+  bfsPath(fromCell, toCell){
+    const key=(x,y)=>x+','+y;
+    const visited=new Set([key(fromCell.cx,fromCell.cy)]);
+    const queue=[{x:fromCell.cx,y:fromCell.cy,path:[]}];
+    while(queue.length){
+      const cur=queue.shift();
+      if(cur.x===toCell.cx && cur.y===toCell.cy) return cur.path.concat([{x:cur.x,y:cur.y}]);
+      const c=this.gen.grid[cur.x][cur.y];
+      const moves=[];
+      if(!c.n) moves.push({x:cur.x,y:cur.y-1});
+      if(!c.s) moves.push({x:cur.x,y:cur.y+1});
+      if(!c.e) moves.push({x:cur.x+1,y:cur.y});
+      if(!c.w) moves.push({x:cur.x-1,y:cur.y});
+      for(const m of moves){
+        if(m.x<0||m.y<0||m.x>=this.size||m.y>=this.size) continue;
+        const k=key(m.x,m.y);
+        if(!visited.has(k)){
+          visited.add(k);
+          queue.push({x:m.x,y:m.y,path:cur.path.concat([{x:cur.x,y:cur.y}])});
+        }
+      }
+    }
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------- INPUT
+class InputManager{
+  constructor(domEl){
+    this.keys={};
+    this.mouseDelta={x:0,y:0};
+    this.locked=false;
+    this.attackQueued=false;
+    domEl.addEventListener('click', ()=>{ if(!this.locked) domEl.requestPointerLock(); });
+    document.addEventListener('pointerlockchange', ()=>{
+      this.locked = document.pointerLockElement===domEl;
+      const hint=document.getElementById('lockHint');
+      if(hint) hint.style.opacity = this.locked ? '0' : '1';
+    });
+    const hintEl=document.getElementById('lockHint');
+    if(hintEl) hintEl.addEventListener('click', ()=>domEl.requestPointerLock());
+    document.addEventListener('mousemove', e=>{
+      if(this.locked){ this.mouseDelta.x+=e.movementX; this.mouseDelta.y+=e.movementY; }
+    });
+    document.addEventListener('mousedown', e=>{ if(this.locked && e.button===0) this.attackQueued=true; });
+    const gameKeys = new Set(['KeyW','KeyA','KeyS','KeyD','Space','ShiftLeft','KeyF']);
+    document.addEventListener('keydown', e=>{
+      this.keys[e.code]=true;
+      if(this.locked && gameKeys.has(e.code)) e.preventDefault();
+    });
+    document.addEventListener('keyup', e=>this.keys[e.code]=false);
+  }
+  consumeAttack(){ const v=this.attackQueued; this.attackQueued=false; return v; }
+  consumeMouseDelta(){ const d={...this.mouseDelta}; this.mouseDelta.x=0; this.mouseDelta.y=0; return d; }
+}
+
+// ---------------------------------------------------------------- PLAYER
+class Player{
+  constructor(camera, input, audio){
+    this.camera=camera;
+    this.input=input;
+    this.audio=audio||null;
+    this.pos = new THREE.Vector3(0,PLAYER_EYE_HEIGHT,0);
+    this.yaw=0; this.pitch=0;
+    this.health=100; this.maxHealth=100;
+    this.stamina=100; this.maxStamina=100;
+    this.battery=100;
+    this.flashlightOn=false;
+    this.speed=4.2; this.sprintMult=1.7;
+    this.dodgeCooldown=0; this.invuln=0;
+    this.damageFlashCb=null;
+    this.attackRange=2.4; this.attackDamage=18; this.attackCooldown=0;
+    this._flashKeyLatch=false;
+  }
+  takeDamage(n){
+    if(this.invuln>0) return;
+    this.health=Math.max(0,this.health-n);
+    if(this.audio) this.audio.playHit();
+    document.getElementById('dmgOverlay').style.opacity='1';
+    setTimeout(()=>document.getElementById('dmgOverlay').style.opacity='0',250);
+    this.invuln=0.4;
+  }
+  update(dt, maze){
+    const input=this.input;
+    // mouse look
+    const d = input.consumeMouseDelta();
+    this.yaw -= d.x*0.0022;
+    this.pitch -= d.y*0.0022;
+    this.pitch = Math.max(-1.2,Math.min(1.2,this.pitch));
+    this.camera.rotation.order='YXZ';
+    this.camera.rotation.y=this.yaw;
+    this.camera.rotation.x=this.pitch;
+
+    // movement
+    const forward=new THREE.Vector3(-Math.sin(this.yaw),0,-Math.cos(this.yaw));
+    const right=new THREE.Vector3(Math.sin(this.yaw+Math.PI/2),0,Math.cos(this.yaw+Math.PI/2));
+    let move=new THREE.Vector3();
+    if(input.keys['KeyW']) move.add(forward);
+    if(input.keys['KeyS']) move.sub(forward);
+    if(input.keys['KeyD']) move.add(right);
+    if(input.keys['KeyA']) move.sub(right);
+    const sprinting = input.keys['ShiftLeft'] && this.stamina>1 && move.lengthSq()>0;
+    if(move.lengthSq()>0) move.normalize();
+
+    let curSpeed=this.speed;
+    if(sprinting){ curSpeed*=this.sprintMult; this.stamina=Math.max(0,this.stamina-dt*22); }
+    else{ this.stamina=Math.min(this.maxStamina,this.stamina+dt*12); }
+
+    // dodge roll
+    this.dodgeCooldown=Math.max(0,this.dodgeCooldown-dt);
+    if(input.keys['Space'] && this.dodgeCooldown<=0 && this.stamina>18 && move.lengthSq()>0){
+      this.pos.addScaledVector(move, 3.2);
+      this.stamina-=18; this.dodgeCooldown=1.1; this.invuln=0.35;
+    }
+
+    this.pos.addScaledVector(move, curSpeed*dt);
+    const flat = maze.resolveCollision({x:this.pos.x,z:this.pos.z}, PLAYER_RADIUS);
+    this.pos.x=flat.x; this.pos.z=flat.z;
+    this.camera.position.copy(this.pos);
+
+    // flashlight toggle (F) with simple key-latch
+    if(input.keys['KeyF'] && !this._flashKeyLatch){
+      this.flashlightOn = !this.flashlightOn;
+      this._flashKeyLatch=true;
+    }
+    if(!input.keys['KeyF']) this._flashKeyLatch=false;
+    if(this.flashlightOn && this.battery>0){
+      this.battery=Math.max(0,this.battery-dt*3.4);
+      if(this.battery<=0) this.flashlightOn=false;
+    }else if(!this.flashlightOn){
+      this.battery=Math.min(100,this.battery+dt*2.2);
+    }
+
+    this.invuln=Math.max(0,this.invuln-dt);
+    this.attackCooldown=Math.max(0,this.attackCooldown-dt);
+  }
+}
+
+// ---------------------------------------------------------------- MONSTER BASE
+const AIState = { PATROL:'PATROL', CHASE:'CHASE', SEARCH:'SEARCH', ATTACK:'ATTACK', HIDDEN:'HIDDEN' };
+
+class Monster{
+  constructor(scene, maze, opts){
+    this.maze=maze;
+    this.name=opts.name||'Unknown';
+    this.speed=opts.speed||2.0;
+    this.chaseSpeed=opts.chaseSpeed||3.0;
+    this.health=opts.health||100;
+    this.maxHealth=this.health;
+    this.damage=opts.damage||10;
+    this.visionRange=opts.visionRange||9;
+    this.state=AIState.PATROL;
+    this.path=[]; this.pathTimer=0;
+    this.attackCooldown=0;
+    this.opacity = opts.opacity!==undefined?opts.opacity:1;
+    this.audio = opts.audio || null;
+
+    const geo=new THREE.CylinderGeometry(0.5,0.5,1.8,10);
+    const mat=new THREE.MeshStandardMaterial({color:opts.color||0x220000, roughness:0.8, transparent:true, opacity:this.opacity});
+    this.mesh=new THREE.Mesh(geo,mat);
+    this.mesh.position.set(opts.x||0,0.9,opts.z||0);
+    scene.add(this.mesh);
+
+    // eyes: two small emissive spheres so it reads as a "monster" in the dark
+    const eyeMat=new THREE.MeshBasicMaterial({color:0xff2222});
+    const eyeGeo=new THREE.SphereGeometry(0.06,6,6);
+    this.eyeL=new THREE.Mesh(eyeGeo,eyeMat); this.eyeL.position.set(-0.15,0.55,0.42);
+    this.eyeR=new THREE.Mesh(eyeGeo,eyeMat); this.eyeR.position.set(0.15,0.55,0.42);
+    this.mesh.add(this.eyeL,this.eyeR);
+  }
+  get pos(){ return this.mesh.position; }
+  distanceTo(player){ return this.pos.distanceTo(player.pos); }
+  canSee(player){
+    // simplistic line-of-sight: within range AND no wall crosses the segment
+    const dist=this.distanceTo(player);
+    if(dist>this.visionRange) return false;
+    const steps=Math.ceil(dist/0.5);
+    for(let i=1;i<steps;i++){
+      const t=i/steps;
+      const x=this.pos.x+(player.pos.x-this.pos.x)*t;
+      const z=this.pos.z+(player.pos.z-this.pos.z)*t;
+      for(const w of this.maze.walls){
+        if(this._segBlocks(w,x,z)) return false;
+      }
+    }
+    return true;
+  }
+  _segBlocks(w,x,z){
+    // treat wall as blocking if the sample point is extremely close to it
+    const dx=w.x2-w.x1, dz=w.z2-w.z1;
+    const len2=dx*dx+dz*dz;
+    let t=len2>0?((x-w.x1)*dx+(z-w.z1)*dz)/len2:0;
+    t=Math.max(0,Math.min(1,t));
+    const cx=w.x1+t*dx, cz=w.z1+t*dz;
+    return Math.hypot(x-cx,z-cz) < (WALL_THICK/2+0.15);
+  }
+  followPath(dt, speed){
+    if(this.path.length===0) return;
+    const target=this.path[0];
+    const dir=new THREE.Vector3(target.x-this.pos.x,0,target.z-this.pos.z);
+    const d=dir.length();
+    if(d<0.25){ this.path.shift(); return; }
+    dir.normalize();
+    this.mesh.position.addScaledVector(dir, speed*dt);
+    this.mesh.lookAt(this.pos.x+dir.x, 0.9, this.pos.z+dir.z);
+  }
+  repathToward(targetWorldPos){
+    const from=this.maze.cellOf(this.pos.x,this.pos.z);
+    const to=this.maze.cellOf(targetWorldPos.x,targetWorldPos.z);
+    const cellPath=this.maze.bfsPath(from,to);
+    this.path = cellPath.slice(1).map(c=>this.maze.worldPos(c.x,c.y));
+  }
+  tryAttack(player, dt){
+    this.attackCooldown=Math.max(0,this.attackCooldown-dt);
+    if(this.distanceTo(player)<1.6 && this.attackCooldown<=0){
+      player.takeDamage(this.damage);
+      this.attackCooldown=1.2;
+    }
+  }
+  takeDamage(n){ this.health=Math.max(0,this.health-n); return this.health<=0; }
+  // Subclasses override this.
+  updateAI(dt, player){ /* no-op base */ }
+  update(dt, player){
+    this.updateAI(dt, player);
+  }
+}
+
+// ---- Phase 1: Shadow Walker — slow, patrols, "learns" the player's route
+class ShadowWalker extends Monster{
+  constructor(scene, maze, opts){
+    super(scene, maze, {...opts, name:'Shadow Walker', color:0x1a1a24, speed:1.4, chaseSpeed:2.6, visionRange:8});
+    this.pathTimer=0;
+    this.memory=[]; // remembers recent player cells ("learns patrol routes")
+  }
+  updateAI(dt, player){
+    this.pathTimer-=dt;
+    const seesPlayer = this.canSee(player);
+    if(seesPlayer){
+      this.state=AIState.CHASE;
+      if(this.pathTimer<=0){ this.repathToward(player.pos); this.pathTimer=0.5; }
+      this.followPath(dt, this.chaseSpeed);
+      this.tryAttack(player, dt);
+    }else{
+      this.state=AIState.PATROL;
+      if(this.pathTimer<=0){
+        // patrol toward a remembered / random cell — "learning" the route
+        const cell=this.maze.cellOf(player.pos.x,player.pos.z);
+        this.memory.push(cell);
+        if(this.memory.length>6) this.memory.shift();
+        const target = this.memory[Math.floor(Math.random()*this.memory.length)] || cell;
+        this.repathToward(this.maze.worldPos(target.cx!==undefined?target.cx:target.x, target.cy!==undefined?target.cy:target.y));
+        this.pathTimer=2.5;
+      }
+      this.followPath(dt, this.speed);
+    }
+  }
+}
+
+// ---- Phase 2: Crawler — hides in corners, charges suddenly
+class Crawler extends Monster{
+  constructor(scene, maze, opts){
+    super(scene, maze, {...opts, name:'Crawler', color:0x2a1010, speed:1.0, chaseSpeed:5.2, visionRange:7, opacity:0.35});
+    this.charging=false;
+    this.hideTimer=Math.random()*3+2;
+  }
+  updateAI(dt, player){
+    const dist=this.distanceTo(player);
+    if(!this.charging){
+      this.mesh.material.opacity=0.35; // hidden in the dark
+      this.hideTimer-=dt;
+      if(dist<5 && this.canSee(player)){
+        this.charging=true;
+        this.mesh.material.opacity=1;
+      }
+      // subtle idle drift so it doesn't feel static
+      if(this.hideTimer<=0){ this.repathToward({x:this.pos.x+(Math.random()-0.5)*3, z:this.pos.z+(Math.random()-0.5)*3}); this.hideTimer=Math.random()*3+2; }
+      this.followPath(dt, this.speed);
+    }else{
+      this.repathToward(player.pos);
+      this.followPath(dt, this.chaseSpeed);
+      this.tryAttack(player, dt);
+      if(dist>10){ this.charging=false; } // lost interest, goes back to hiding
+    }
+  }
+}
+
+// ---- Phase 3: The Whisper — mostly invisible, teleports behind the player
+class Whisper extends Monster{
+  constructor(scene, maze, opts){
+    super(scene, maze, {...opts, name:'The Whisper', color:0x101018, speed:1.6, chaseSpeed:3.4, visionRange:11, opacity:0.08});
+    this.teleportTimer=Math.random()*6+4;
+  }
+  updateAI(dt, player){
+    this.teleportTimer-=dt;
+    this.mesh.material.opacity = 0.08 + Math.sin(performance.now()*0.002)*0.03;
+    if(this.teleportTimer<=0){
+      // teleport to just behind the player's current facing direction
+      const behind = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+      const tx=player.pos.x+behind.x*3, tz=player.pos.z+behind.z*3;
+      this.mesh.position.set(tx,0.9,tz);
+      showWhisperText();
+      if(this.audio) this.audio.playWhisper();
+      this.teleportTimer=Math.random()*8+6;
+      this.mesh.material.opacity=0.5;
+    }
+    const dist=this.distanceTo(player);
+    if(dist<2.2){
+      this.mesh.material.opacity=0.9;
+      this.tryAttack(player, dt);
+    }
+  }
+}
+
+function showWhisperText(){
+  const lines=["...it knows you're here...", "...behind you...", "...don't turn around...", "...closer now..."];
+  const el=document.getElementById('whisperText');
+  el.textContent=lines[Math.floor(Math.random()*lines.length)];
+  el.style.opacity='1';
+  setTimeout(()=>el.style.opacity='0', 2200);
+}
+
+// ---------------------------------------------------------------- PHASE CONFIG
+// This table is the single source of truth for progression. Extend it with
+// entries for phases 4-10 (each paired with a new Monster subclass) to grow
+// the full 10-phase game described in the design doc.
+const PHASE_CONFIG = [
+  {
+    id:1, title:'Phase 1 — The Shallow Halls', mazeSize:8,
+    theme:{wallColor:0x2b2622, floorColor:0x141210, exitGlow:0x88ff88},
+    MonsterClass: ShadowWalker, monsterHealth:100, bossName:'Shadow Walker'
+  },
+  {
+    id:2, title:'Phase 2 — The Crawling Dark', mazeSize:10,
+    theme:{wallColor:0x241a1a, floorColor:0x100b0b, exitGlow:0xff8844},
+    MonsterClass: Crawler, monsterHealth:140, bossName:'Crawler'
+  },
+  {
+    id:3, title:'Phase 3 — Whispering Corridor', mazeSize:12,
+    theme:{wallColor:0x181822, floorColor:0x0b0b10, exitGlow:0x8888ff},
+    MonsterClass: Whisper, monsterHealth:180, bossName:'The Whisper'
+  }
+  // --- TEMPLATE FOR PHASES 4-10 ---
+  // { id:4, title:'Phase 4 — ...', mazeSize:14,
+  //   theme:{wallColor:0x..., floorColor:0x..., exitGlow:0x...},
+  //   MonsterClass: TheButcher, monsterHealth:220, bossName:'The Butcher' }
+];
+
+// ---------------------------------------------------------------- AUDIO
+// All sound is synthesized live with the Web Audio API -- no external sound
+// files to load, so it works offline and instantly. Covers the doc's audio
+// requirements: ambient drone, footsteps, breathing-adjacent hiss, whispers,
+// heartbeat at low health, and combat/UI feedback stings.
+class AudioManager{
+  constructor(){
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new Ctx();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.8;
+    this.master.connect(this.ctx.destination);
+    this._buildNoiseBuffer();
+    this.ambientNodes = null;
+    this.heartbeatOn = false;
+    this._heartbeatTimeout = null;
+  }
+  resume(){ if(this.ctx.state==='suspended') this.ctx.resume(); }
+  _buildNoiseBuffer(){
+    const len = this.ctx.sampleRate * 2;
+    this.noiseBuffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = this.noiseBuffer.getChannelData(0);
+    for(let i=0;i<len;i++) data[i] = Math.random()*2-1;
+  }
+  _noiseSource(){
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    return src;
+  }
+  startAmbient(){
+    if(this.ambientNodes) return;
+    const t=this.ctx.currentTime;
+    const drone=this.ctx.createOscillator(); drone.type='sine'; drone.frequency.value=55;
+    const drone2=this.ctx.createOscillator(); drone2.type='sine'; drone2.frequency.value=58.5; // beat frequency = unease
+    const droneGain=this.ctx.createGain(); droneGain.gain.value=0.045;
+    const lfo=this.ctx.createOscillator(); lfo.frequency.value=0.06;
+    const lfoGain=this.ctx.createGain(); lfoGain.gain.value=0.025;
+    lfo.connect(lfoGain); lfoGain.connect(droneGain.gain);
+    drone.connect(droneGain); drone2.connect(droneGain); droneGain.connect(this.master);
+    drone.start(t); drone2.start(t); lfo.start(t);
+
+    const hiss=this._noiseSource(); hiss.loop=true;
+    const hissFilter=this.ctx.createBiquadFilter();
+    hissFilter.type='bandpass'; hissFilter.frequency.value=700; hissFilter.Q.value=0.6;
+    const hissGain=this.ctx.createGain(); hissGain.gain.value=0.012;
+    hiss.connect(hissFilter); hissFilter.connect(hissGain); hissGain.connect(this.master);
+    hiss.start(t);
+
+    this.ambientNodes={drone,drone2,droneGain,lfo,lfoGain,hiss,hissFilter,hissGain};
+  }
+  playClick(){
+    const t=this.ctx.currentTime;
+    const osc=this.ctx.createOscillator(); osc.type='square';
+    osc.frequency.setValueAtTime(1200,t); osc.frequency.exponentialRampToValueAtTime(400,t+0.04);
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0.15,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+    osc.connect(g); g.connect(this.master); osc.start(t); osc.stop(t+0.06);
+  }
+  playFootstep(sprint){
+    const t=this.ctx.currentTime;
+    const src=this._noiseSource();
+    const filter=this.ctx.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=sprint?520:340;
+    const g=this.ctx.createGain();
+    g.gain.setValueAtTime(sprint?0.13:0.085,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12);
+    src.connect(filter); filter.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t+0.15);
+  }
+  playSwordSwing(){
+    const t=this.ctx.currentTime;
+    const src=this._noiseSource();
+    const filter=this.ctx.createBiquadFilter(); filter.type='bandpass';
+    filter.frequency.setValueAtTime(2200,t); filter.frequency.exponentialRampToValueAtTime(350,t+0.25); filter.Q.value=1.1;
+    const g=this.ctx.createGain();
+    g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.18,t+0.03); g.gain.exponentialRampToValueAtTime(0.001,t+0.28);
+    src.connect(filter); filter.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t+0.3);
+  }
+  playBossHit(){
+    const t=this.ctx.currentTime;
+    const osc=this.ctx.createOscillator(); osc.type='triangle';
+    osc.frequency.setValueAtTime(220,t); osc.frequency.exponentialRampToValueAtTime(90,t+0.15);
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.18);
+    osc.connect(g); g.connect(this.master); osc.start(t); osc.stop(t+0.2);
+  }
+  playHit(){
+    const t=this.ctx.currentTime;
+    const osc=this.ctx.createOscillator(); osc.type='sine';
+    osc.frequency.setValueAtTime(160,t); osc.frequency.exponentialRampToValueAtTime(40,t+0.25);
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0.3,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+    osc.connect(g); g.connect(this.master); osc.start(t); osc.stop(t+0.32);
+  }
+  playWhisper(){
+    const t=this.ctx.currentTime;
+    const src=this._noiseSource();
+    const filter=this.ctx.createBiquadFilter(); filter.type='bandpass'; filter.frequency.value=2200; filter.Q.value=6;
+    const g=this.ctx.createGain();
+    g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.05,t+0.3); g.gain.exponentialRampToValueAtTime(0.001,t+1.4);
+    src.connect(filter); filter.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t+1.5);
+  }
+  playPhaseTransition(){
+    const t=this.ctx.currentTime;
+    const osc=this.ctx.createOscillator(); osc.type='sawtooth';
+    osc.frequency.setValueAtTime(80,t); osc.frequency.linearRampToValueAtTime(220,t+1.2);
+    const g=this.ctx.createGain();
+    g.gain.setValueAtTime(0.001,t); g.gain.linearRampToValueAtTime(0.12,t+0.3); g.gain.exponentialRampToValueAtTime(0.001,t+1.4);
+    osc.connect(g); g.connect(this.master); osc.start(t); osc.stop(t+1.5);
+  }
+  setHeartbeat(on){
+    if(on === this.heartbeatOn) return;
+    this.heartbeatOn = on;
+    if(on){ this._heartbeatLoop(); }
+    else if(this._heartbeatTimeout){ clearTimeout(this._heartbeatTimeout); this._heartbeatTimeout=null; }
+  }
+  _heartbeatLoop(){
+    if(!this.heartbeatOn) return;
+    const t=this.ctx.currentTime;
+    const beat=(delay)=>{
+      const osc=this.ctx.createOscillator(); osc.type='sine'; osc.frequency.setValueAtTime(55,t+delay);
+      const g=this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001,t+delay); g.gain.linearRampToValueAtTime(0.35,t+delay+0.02); g.gain.exponentialRampToValueAtTime(0.001,t+delay+0.25);
+      osc.connect(g); g.connect(this.master); osc.start(t+delay); osc.stop(t+delay+0.3);
+    };
+    beat(0); beat(0.28);
+    this._heartbeatTimeout = setTimeout(()=>this._heartbeatLoop(), 950);
+  }
+}
+
+// ---------------------------------------------------------------- GAME
+class Game{
+  constructor(){
+    this.canvas=document.getElementById('gameCanvas');
+    this.renderer=new THREE.WebGLRenderer({canvas:this.canvas, antialias:true});
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.shadowMap.enabled=true;
+    this.scene=new THREE.Scene();
+    this.scene.fog=new THREE.FogExp2(0x000000, 0.045);
+    this.camera=new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 200);
+    this.input=new InputManager(this.canvas);
+    this.audio=new AudioManager();
+    this.player=new Player(this.camera, this.input, this.audio);
+
+    this.flashSpot=new THREE.SpotLight(0xfff2d8, 0, 26, Math.PI/6.2, 0.5, 1);
+    this.flashSpot.castShadow=false;
+    this.camera.add(this.flashSpot, this.flashSpot.target);
+    this.flashSpot.position.set(0,0,0);
+    this.flashSpot.target.position.set(0,0,-1);
+    this.scene.add(this.camera);
+
+    this._buildViewModels();
+
+    const ambient=new THREE.AmbientLight(0x0a0a12, 0.18);
+    this.scene.add(ambient);
+
+    this.phaseIndex=0;
+    this.inBossFight=false;
+    this.boss=null;
+    this.clock=new THREE.Clock();
+    this.currentMonsters=[];
+
+    window.addEventListener('resize', ()=>{
+      this.camera.aspect=window.innerWidth/window.innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    this.autosaveTimer=0;
+    this._prevFlashlightOn=false;
+    this.footstepTimer=0;
+  }
+  // Builds the flashlight and sword as visible meshes attached to the camera,
+  // so the player actually sees them held in first-person view.
+  _buildViewModels(){
+    // --- Flashlight (left hand) ---
+    this.flashGroup = new THREE.Group();
+    this.flashBasePos = new THREE.Vector3(-0.32,-0.28,-0.5);
+    this.flashGroup.position.copy(this.flashBasePos);
+    this.flashGroup.rotation.set(0.05, 0.15, 0.1);
+
+    const flBodyMat = new THREE.MeshStandardMaterial({color:0x1c1c1e, roughness:0.5, metalness:0.6});
+    const flBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.05,0.24,10), flBodyMat);
+    flBody.rotation.x = Math.PI/2;
+
+    const flGripMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:0.8});
+    const flGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.08,10), flGripMat);
+    flGrip.rotation.x = Math.PI/2;
+    flGrip.position.z = 0.14;
+
+    // lens material's emissive channel is toggled on/off to show the light is "on"
+    this.flashLensMat = new THREE.MeshStandardMaterial({color:0x1a1a1a, emissive:0x000000, emissiveIntensity:0, roughness:0.3});
+    const flLens = new THREE.Mesh(new THREE.CylinderGeometry(0.052,0.052,0.02,10), this.flashLensMat);
+    flLens.rotation.x = Math.PI/2;
+    flLens.position.z = -0.125;
+
+    this.flashGroup.add(flBody, flGrip, flLens);
+    this.camera.add(this.flashGroup);
+
+    // --- Sword (right hand) ---
+    this.swordGroup = new THREE.Group();
+    this.swordBasePos = new THREE.Vector3(0.34,-0.34,-0.5);
+    this.swordBaseRotX = -0.25;
+    this.swordGroup.position.copy(this.swordBasePos);
+    this.swordGroup.rotation.set(this.swordBaseRotX, 0.15, -0.35);
+
+    const bladeMat = new THREE.MeshStandardMaterial({color:0xb9bcc4, roughness:0.25, metalness:0.85});
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035,0.55,0.012), bladeMat);
+    blade.position.y = 0.32;
+
+    const hiltMat = new THREE.MeshStandardMaterial({color:0x3a2a1a, roughness:0.85});
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.03,0.03), hiltMat);
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.022,0.16,8), hiltMat);
+    handle.position.y = -0.09;
+
+    this.swordGroup.add(blade, guard, handle);
+    this.camera.add(this.swordGroup);
+
+    this.bobTime=0;
+    this.swinging=false;
+    this.swingTimer=0;
+  }
+  loadPhase(index){
+    this.phaseIndex=index;
+    const cfg=PHASE_CONFIG[index];
+    // clear old maze/monsters
+    if(this.maze) this.scene.remove(this.maze.group);
+    this.currentMonsters.forEach(m=>this.scene.remove(m.mesh));
+    this.currentMonsters=[];
+    this.inBossFight=false;
+    document.getElementById('bossWrap').style.display='none';
+
+    this.maze=new Maze(this.scene, cfg.mazeSize, cfg.theme);
+    this.player.pos.set(this.maze.startWorld.x, PLAYER_EYE_HEIGHT, this.maze.startWorld.z);
+    this.player.yaw=0; this.player.pitch=0;
+
+    // roaming monster instance, placed mid-maze
+    const midCell=Math.floor(cfg.mazeSize/2);
+    const midPos=this.maze.worldPos(midCell, midCell);
+    const monster=new cfg.MonsterClass(this.scene, this.maze, {x:midPos.x, z:midPos.z, health:cfg.monsterHealth, audio:this.audio});
+    this.currentMonsters.push(monster);
+
+    document.getElementById('phaseTag').textContent=cfg.title;
+    document.getElementById('objective').textContent='Objective: find the glowing exit gate. Something is watching.';
+    document.getElementById('bossName').textContent=cfg.bossName;
+  }
+  triggerBossFight(){
+    this.inBossFight=true;
+    const cfg=PHASE_CONFIG[this.phaseIndex];
+    document.getElementById('objective').textContent='Objective: survive. Strike with Left Click when it closes in.';
+    document.getElementById('bossWrap').style.display='block';
+    this.boss=this.currentMonsters[0];
+    this.boss.health=this.boss.maxHealth; // full health for the "arena" confrontation
+  }
+  advancePhase(){
+    const next=this.phaseIndex+1;
+    if(next>=PHASE_CONFIG.length){
+      this.win();
+      return;
+    }
+    this.audio.playPhaseTransition();
+    this.loadPhase(next);
+    SaveSystem.save({ phaseIndex: this.phaseIndex, health: this.player.health });
+  }
+  win(){
+    this.audio.setHeartbeat(false);
+    document.getElementById('startScreen').style.display='none';
+    const end=document.getElementById('endScreen');
+    end.style.display='flex';
+    document.getElementById('endText').textContent =
+      "The maze collapses behind you. Daylight breaks through the dust. As the credits "+
+      "would begin, you glance back at the entrance one last time — and see a pair of "+
+      "eyes staring back from the dark.";
+    document.exitPointerLock && document.exitPointerLock();
+  }
+  lose(){
+    this.audio.setHeartbeat(false);
+    document.getElementById('startScreen').style.display='none';
+    const end=document.getElementById('endScreen');
+    end.style.display='flex';
+    document.getElementById('endText').textContent = "The dark finds you first. Try again.";
+    document.exitPointerLock && document.exitPointerLock();
+  }
+  update(dt){
+    this.player.update(dt, this.maze);
+    this.flashSpot.intensity = this.player.flashlightOn ? 3.4 : 0;
+    this.flashLensMat.emissive.setHex(this.player.flashlightOn ? 0xfff2c0 : 0x000000);
+    this.flashLensMat.emissiveIntensity = this.player.flashlightOn ? 1.6 : 0;
+    if(this.player.flashlightOn !== this._prevFlashlightOn){
+      this.audio.playClick();
+      this._prevFlashlightOn = this.player.flashlightOn;
+    }
+
+    // consume the attack click once per frame; used both for the visual swing
+    // (always) and for dealing boss damage (only while a boss fight is active)
+    const attackPressed = this.input.consumeAttack();
+
+    // idle/walk bob for the held flashlight + sword, plus footstep sfx
+    const moving = this.input.keys['KeyW']||this.input.keys['KeyA']||this.input.keys['KeyS']||this.input.keys['KeyD'];
+    const sprinting = moving && this.input.keys['ShiftLeft'] && this.player.stamina>1;
+    this.bobTime += dt * (moving ? (sprinting?15:9) : 2.2);
+    const bobY = Math.sin(this.bobTime) * (moving ? 0.018 : 0.004);
+    const bobX = Math.cos(this.bobTime*0.5) * (moving ? 0.01 : 0.002);
+    this.flashGroup.position.set(this.flashBasePos.x+bobX, this.flashBasePos.y+bobY, this.flashBasePos.z);
+    if(!this.swinging){
+      this.swordGroup.position.set(this.swordBasePos.x+bobX*0.8, this.swordBasePos.y+bobY*0.8, this.swordBasePos.z);
+    }
+    if(moving){
+      this.footstepTimer -= dt;
+      if(this.footstepTimer<=0){
+        this.audio.playFootstep(sprinting);
+        this.footstepTimer = sprinting ? 0.28 : 0.44;
+      }
+    }else{
+      this.footstepTimer = 0;
+    }
+
+    // sword swing animation + sound
+    if(attackPressed && !this.swinging){ this.swinging=true; this.swingTimer=0; this.audio.playSwordSwing(); }
+    if(this.swinging){
+      this.swingTimer += dt;
+      const dur=0.28;
+      const t=Math.min(1, this.swingTimer/dur);
+      const swing=Math.sin(t*Math.PI); // eases out to 0 at both ends
+      this.swordGroup.rotation.x = this.swordBaseRotX - swing*1.3;
+      this.swordGroup.position.z = this.swordBasePos.z - swing*0.18;
+      if(t>=1){
+        this.swinging=false;
+        this.swordGroup.rotation.x = this.swordBaseRotX;
+        this.swordGroup.position.z = this.swordBasePos.z;
+      }
+    }
+
+    // check exit reached
+    const distToExit=Math.hypot(this.player.pos.x-this.maze.exitWorld.x, this.player.pos.z-this.maze.exitWorld.z);
+    if(!this.inBossFight && distToExit<2.2){
+      this.triggerBossFight();
+    }
+
+    for(const m of this.currentMonsters){
+      m.update(dt, this.player);
+    }
+
+    if(this.inBossFight && this.boss){
+      document.getElementById('bossFill').style.width = (100*this.boss.health/this.boss.maxHealth)+'%';
+      if(attackPressed && this.player.attackCooldown<=0){
+        if(this.boss.distanceTo(this.player) < this.player.attackRange){
+          const dead=this.boss.takeDamage(this.player.attackDamage);
+          this.audio.playBossHit();
+          this.player.attackCooldown=0.5;
+          if(dead){
+            this.scene.remove(this.boss.mesh);
+            this.advancePhase();
+          }
+        }
+      }
+    }
+
+    this.audio.setHeartbeat(this.player.health>0 && this.player.health<30);
+
+    if(this.player.health<=0){ this.lose(); return; }
+
+    // heartbeat vignette pulse at low health (visual only, cheap effect)
+    const vign=document.getElementById('vignette');
+    if(this.player.health<30){
+      const pulse=0.7+Math.sin(performance.now()*0.008)*0.15;
+      vign.style.boxShadow=`inset 0 0 ${220*pulse}px ${90*pulse}px rgba(80,0,0,0.9)`;
+    }else{
+      vign.style.boxShadow='inset 0 0 220px 90px rgba(0,0,0,0.85)';
+    }
+
+    document.getElementById('healthFill').style.width=this.player.health+'%';
+    document.getElementById('staminaFill').style.width=this.player.stamina+'%';
+    document.getElementById('batteryFill').style.width=this.player.battery+'%';
+
+    this.autosaveTimer+=dt;
+    if(this.autosaveTimer>20){
+      this.autosaveTimer=0;
+      SaveSystem.save({ phaseIndex:this.phaseIndex, health:this.player.health });
+    }
+  }
+  loop(){
+    const dt=Math.min(0.05,this.clock.getDelta());
+    if(!this._paused) this.update(dt);
+    this.renderer.render(this.scene, this.camera);
+    requestAnimationFrame(()=>this.loop());
+  }
+  start(fromSave){
+    document.getElementById('startScreen').style.display='none';
+    this.loadPhase(fromSave ? fromSave.phaseIndex : 0);
+    if(fromSave) this.player.health=fromSave.health;
+    this.loop();
+  }
+}
+
+// -------------------------------------------------------- FINAL BOSS STUB
+// The design doc's "Maze King" final boss reuses every previous monster's
+// ability. This stub shows the intended pattern for that fight: each phase
+// of the fight swaps in a different `abilityHandlers` entry. Wire this up
+// once phases 4-10 exist and the Final Arena scene is built.
+class FinalBossStub extends Monster{
+  constructor(scene, maze, opts){
+    super(scene, maze, {...opts, name:'The Maze King', color:0x330000, speed:2.2, chaseSpeed:4.5, health:2000});
+    this.abilityHandlers = {
+      teleport: (player)=>{ /* reuse Whisper-style teleport-behind logic */ },
+      summon: (scene)=>{ /* reuse Collector-style add-spawns */ },
+      earthquake: ()=>{ /* camera shake + damage-over-time in radius */ }
+    };
+    this.phaseThresholds=[0.75,0.5,0.25]; // health % that trigger new ability sets
+  }
+  updateAI(dt, player){
+    // Placeholder: alternates a couple of abilities based on health %.
+    // Full implementation would branch through this.abilityHandlers per
+    // this.phaseThresholds, matching "Multiple attack phases" requirement.
+    this.repathToward(player.pos);
+    this.followPath(dt, this.chaseSpeed);
+    this.tryAttack(player, dt);
+  }
+}
+
+// ---------------------------------------------------------------- BOOTSTRAP
+const game=new Game();
+
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  game.audio.resume();
+  game.audio.startAmbient();
+  game.start(null);
+  game.canvas.requestPointerLock();
+});
+document.getElementById('loadBtn').addEventListener('click', async ()=>{
+  game.audio.resume();
+  game.audio.startAmbient();
+  const data=await SaveSystem.load();
+  game.start(data || null);
+  game.canvas.requestPointerLock();
+});
+document.getElementById('restartBtn').addEventListener('click', ()=>{
+  document.getElementById('endScreen').style.display='none';
+  document.getElementById('startScreen').style.display='flex';
+});
+</script>
+</body>
+</html>
